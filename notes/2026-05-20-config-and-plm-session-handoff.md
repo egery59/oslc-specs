@@ -346,3 +346,70 @@ The mapping doc is renamed to reflect its new role: a PLM-side mapping of three 
 2. Decide what to do with the PLM-side open questions (authorization metadata, override semantics, etc.) that were in the deleted doc — they can be filed as TC issues, or moved into the PLM spec as informative open questions, or dropped.
 3. Re-namespace the body of `specs/plm/existing-plm-mapping.md` from `oslc_config:EffectivitySelections` / `oslc_config:VariabilitySelections` to the new home namespaces, and update the document's section references accordingly.
 4. Update or remove the prior `## Session of 2026-05-25 — Refinement progress` content if you'd rather the handoff note read as a single coherent state-of-play rather than a history of two iterations within one day.
+
+---
+
+## Session of 2026-06-01 / 2026-06-02 — Diagrams, CDCM analysis, and the digital-thread example
+
+*This session was mostly analysis-and-communication work rather than spec edits: a PowerPoint diagram refresh, three new informative analysis documents in `specs/plm/resources/`, a worked end-to-end digital-thread example, the SysML v2 comparison, the AM `realizes` cross-domain link, the `LogicalDesign`/`PhysicalDesign` issue, and an enumeration refactor. Commits this session: `6e82e3b` (variability/effectivity split — carried over from the prior restructure), `79daac6`, `396c6cc`, and `ae13250`. The work landed across several commits because it was reviewed incrementally with the user.*
+
+### Spec / vocab edits that shipped earlier in the broader effort (recap, already on master)
+
+These were committed across `79daac6`, `6e82e3b`, `396c6cc` and are the state the analysis docs describe:
+
+- **EffectivityValueType enumeration.** `oslc_plm:Date` / `UnitNumber` / `SerialNumber` / `Lot` / `Model` refactored from individual `rdfs:Class` declarations to instances of a new `oslc_plm:EffectivityValueType` enumeration class, per the OSLC Core enumeration pattern. The Effectivity shape closes the enumeration via `oslc:range` + `oslc:allowedValue`.
+- **`oslc_am:realizes` cross-domain link.** New common link type contributed to the OASIS-standard `oslc_am:` namespace, defined on `oslc_am:Resource` (not on PLM resources). Direction is AM-resource → realized-resource; the canonical use is a SysML `PartDefinition` realizing an `oslc_plm:Part`. New `:AmResourceShape` in `plm-shapes.ttl`; rendered as a peer subsection under *Constraints on Other OSLC Domain Resources* in `pml-shapes.html`.
+- **Shape-rendering fix.** `plm-shapes.ttl` was missing the `oslc_config:` prefix declaration, which caused ReSpec `shapeToSpec` rendering failures (`prefixedName.localeCompare` of null). Adding the prefix fixed it. Validated all four ttl files parse with rdflib.
+
+### GitHub issue filed
+
+- **Issue #638 — `LogicalDesign` / `PhysicalDesign` review/removal.** Research established that these class names are not Teamcenter-canonical; the closest concept (ARCADIA logical/physical architecture via Siemens System Modeling Workbench) is an architecture viewpoint, not a Part subtype, so the `rdfs:subClassOf oslc_plm:Part` framing is unsupported. Recommendation: **Option A — Remove**. The restructure and the new `partusage-vs-contribution` guidance strengthen the case (multi-view BOMs are expressible via named Configurations + EffectivitySelections; no `viewType` and no Part subclasses needed). A comment was added to #638 after the restructure. Still open, awaiting TC review and ideally confirmation from the original Siemens contributors. Label: `Domain: PLM`.
+
+### PowerPoint diagram (MID, not in this repo)
+
+- Updated `~/Library/CloudStorage/OneDrive-MIDGmbH/MID/CDCM/PLM ALM Integration.pptx`, slide 5 (right side), via `python-pptx`, to use OSLC PLM vocabulary instead of Teamcenter terms and to visually separate the Part / PartUsage hierarchy from the local configurations that select from them. A backup `PLM ALM Integration - before-OSLC-restructure.pptx` and an edited `PLM ALM Integration - OSLC PLM update.pptx` were written alongside the original. The user then hand-refined the result (cleaner role-name labels on relationship ends, `dcterms:isVersionOf`, `composedOf`, `represents`, `selects`, an "Other OSLC Domains" box). This artifact lives in OneDrive, not in the spec repo.
+
+### New informative documents in `specs/plm/resources/` (all shipped in `ae13250`)
+
+1. **`oslc-cm-sysml-teamcenter.md`** — layered conceptual analysis. How OSLC Configuration Management (the selector), SysML v2 as `oslc_am` resources (the selected/definition), and Teamcenter PLM (vertically integrated, spans both) relate. The core mismatch is *extensional* (OSLC) vs *intensional* (Teamcenter) selection. Includes:
+   - An **aspect-coverage table** with a CDCM column added (the user reframed several "OSLC CM" → "OSLC Configuration Management" here too).
+   - A section analysing the **alternate proposal** (`oslc_plm:Part rdfs:subClassOf oslc_config:Configuration`, `oslc_plm:PartUsage rdfs:subClassOf oslc_config:Contribution`) raised in OSLC-OP, and why it fails: a **versioning regress** — Configurations are not versioned in the version-resource sense, so contributing a Part-as-Configuration has no Configuration-Context to pick a revision, and the recursion has no termination. This was a user-requested addition.
+2. **`oslc-teamcenter-plm-mapping.md`** — three candidate mappings, recommending **Mapping 3** (the split: `oslc_plm:Part`/`PartUsage` as AM resources + effectivity/variability as `oslc_config:Selections` subclasses). Includes:
+   - The **precise/imprecise BOMView Revision** mapping: imprecise BVR ⇔ `oslc_config:Stream` (late-bound, server-maintained selects), precise BVR ⇔ `oslc_config:Baseline` (early-bound, frozen selects + frozen effectivityContext). Added both as prose (a subsection in Mapping 3) and a row-pair in the *How the extensions complete the coverage* table. User-requested.
+   - A **CDCM — a scoped Mapping 1 that works** section: CDCM does the Mapping-1 conflation but benignly, because its Configuration Items are not versioned and not cross-tool-linkable; CDCM is a Global Configuration *aggregator*, a third CM-side role alongside domain-resource providers and PLM providers.
+   - A **SysML v2 prior-art** note (no alignment agenda exists in either community; cross-domain *linking* is already provided via the AM common link types + `realizes`).
+3. **`acme-ecowash-digital-thread.md`** — the focused, stakeholder-facing worked example (the "what"). Acme EcoWash 2027 washing machine with an OEM TabletCo tablet running an Acme-bundled Controller App (the third-party-hardware + vendor-software composite). OSLC PLM owns Parts/PartUsages and the effectivity-bound BOM (Baseline at 2027-09-01 with frozen `effectivityContext` + `EffectivitySelections.selects`). CDCM aggregates the PLM Baseline + RM/QM/AM local configurations + CDCM-internal Configuration Items (CAD/MCAD/ECAD/datasheets/manuals) whose **work products are SharePoint URLs**. Includes a SysML v2 class diagram of the Controller App (Mermaid `classDiagram`) and a V-model traceability diagram (Mermaid `flowchart`).
+4. **`acme-ecowash-digital-thread-exploration.md`** — the analytical companion (the "why"). Same product, instantiated four ways: Teamcenter alone, OSLC PLM + OSLC Configuration Management, CDCM alone, and the recommended hybrid. This was originally the single `acme-ecowash-digital-thread.md`; it was renamed to `-exploration` and the focused doc above was written fresh, because the four-way comparison was too much for most stakeholders.
+
+### Decisions / corrections captured this session
+
+- **Change requests are not versioned resources.** An `oslc_cm:ChangeRequest` (or EWM work item) drives transitions between versions; it is *not* contributed to a Global Configuration as a configuration. Instead the change-management tool associates work items with the release iteration and links them (`oslc_cm:affects*`) into the configured versioned resources. ELM EWM does this via release-iteration↔configuration association; whether Jira's OSLC support has an equivalent is not established. Both example docs were corrected to reflect this (removed the "Jira local configuration of open CRs" contribution; the change-management box now links *into* the configured resources rather than being a GC child).
+- **`oslc_am:realizes` direction.** Defined on `oslc_am:Resource` only; PLM resources are *targets*, not bearers (e.g., a SysML PartDefinition realizes a PLM Part). The Mermaid SysML diagram in the example uses the inverse, PLM-side reading (`acme:ControllerApp/v3.2 ..|> EcoWashControllerApp : realizes`) and the prose notes both directions are defensible.
+- **"OSLC CM" terminology.** The user is deliberately avoiding "OSLC CM" because it historically meant **OSLC Change Management** (which predates OSLC Configuration Management). Swept the remaining "OSLC CM" → "OSLC Configuration Management" across `plm-spec.html`, `oslc-variability-spec.html`, `existing-plm-mapping.md`, and the new resource docs. A short abbreviation of OSLC Configuration Management was considered (e.g., "OSLC Config") and rejected. **Going forward: always write "OSLC Configuration Management" in full; never "OSLC CM".**
+- **No links to the private CDCM repo.** These docs are bound for OASIS; `docs/OslcGcIntegration.md` and `github.com/MID-CDCM/platform` references were removed and replaced with self-contained descriptions of the standard OSLC Configuration Management Global Configuration mechanisms. ELM/JTS/`/gc`-protocol specifics were softened to vendor-neutral phrasing (ELM mentioned only as a non-normative example).
+
+### Mermaid-diagram lessons (for future diagram work in these docs)
+
+- `classDiagram` relationship labels cannot contain a colon — `: oslc_plm:realizes` is a parse error (`Expecting 'NEWLINE'… got 'LABEL'`). Use a colon-free label (`: realizes`) and name the full property in prose.
+- Mermaid auto-layout will not reliably produce a literal "V" for a V-model; trying to force it produced an upside-down, too-small diagram. The working approach was three side-by-side boxes (Requirements / Parts / Tests) with tiers listed inside and labelled cross-domain arrows, relying on the well-known V-model concept rather than the literal shape.
+
+### Files touched this session
+
+```
+specs/plm/resources/oslc-cm-sysml-teamcenter.md            # new — layered analysis + alternate-proposal/versioning-regress section
+specs/plm/resources/oslc-teamcenter-plm-mapping.md         # new — three mappings, precise/imprecise BVR, CDCM aggregator role
+specs/plm/resources/acme-ecowash-digital-thread.md         # new — focused worked example (OSLC PLM + CDCM/SharePoint)
+specs/plm/resources/acme-ecowash-digital-thread-exploration.md  # new — four-way analytical comparison
+specs/plm/plm-spec.html                                    # "OSLC CM" → "OSLC Configuration Management"
+specs/core/oslc-variability-spec.html                      # "OSLC CM" → "OSLC Configuration Management"
+specs/plm/existing-plm-mapping.md                          # "OSLC CM" → "OSLC Configuration Management" + ASCII table header fixes
+# (PowerPoint artifact updated in OneDrive, not in this repo)
+```
+
+### Suggested next steps after this session
+
+1. **Act on issue #638** if the TC concurs with Option A — remove `LogicalDesign` / `PhysicalDesign` / `realizesLogicalDesign` from vocab, shapes, the spec overview, and `PLM.svg`.
+2. **Variability worked example** — extend the Acme EcoWash example with Capacity / Market / Trim options exercising `oslc:VariabilitySelections` and `oslc:variabilityContext` (currently deferred in both example docs).
+3. **Re-namespace the body of `existing-plm-mapping.md`** was completed this session (the variability terms now use `oslc:`); double-check no `oslc_config:EffectivitySelections` / `oslc_config:VariabilitySelections` mentions remain anywhere (they should all be `oslc_plm:` / `oslc:` now).
+4. **Verify Jira OSLC change-management capability** — the open question of whether Jira's OSLC support associates work items with release-iteration configurations the way ELM EWM does. Flagged as "not established" in both example docs.
+5. **Submit the batch for OSLC-OP / OASIS review** — the PLM spec (effectivity), the new OSLC Variability spec, and the four informative resource docs form a coherent package. The resource docs are explicitly informative reviewer support, not normative.
