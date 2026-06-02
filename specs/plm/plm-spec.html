@@ -681,7 +681,7 @@ services interface for lifecycle management of product resources."
         <strong>No changes to OSLC Configuration Management.</strong> <code>oslc_plm:EffectivitySelections</code> is a
         subclass of <code>oslc_config:Selections</code>, and <code>oslc_plm:effectivityContext</code> is a property
         carried on <code>oslc_config:Configuration</code> as a PLM-domain extension. Both are outgoing references to
-        OSLC CM, not changes to it.
+        OSLC Configuration Management, not changes to it.
       </p>
 
       <p>
@@ -873,7 +873,7 @@ ex:ctx-abc-7
           This specification defines <code>oslc_plm:EffectivitySelections</code> as a specialization of
           <code>oslc_config:Selections</code>, and <code>oslc_plm:effectivityContext</code> as an extension property
           on <code>oslc_config:Configuration</code>. Together they integrate PLM effectivity into the OSLC
-          Configuration Management resolution model without modifying the OSLC CM specification itself.
+          Configuration Management resolution model without modifying the OSLC Configuration Management specification itself.
         </p>
 
         <section id="effectivity-selections-resource">
@@ -895,7 +895,7 @@ ex:ctx-abc-7
           </p>
           <ol>
             <li>has been selected as a candidate by the Configuration-Context of the containing configuration through
-              the version resolution defined in the OSLC CM base specification, Section 12; and</li>
+              the version resolution defined in the OSLC Configuration Management base specification, Section 12; and</li>
             <li>has been evaluated as effective by its <code>oslc_plm:effectivity</code> records against the
               EffectivityContext identified by the containing configuration's
               <code>oslc_plm:effectivityContext</code> property.</li>

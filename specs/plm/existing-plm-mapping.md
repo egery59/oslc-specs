@@ -18,7 +18,7 @@ This document is *not* a Project Note in the OASIS sense and carries no normativ
 
 All three products share a structural pattern that maps cleanly to the OSLC PLM + OSLC Variability resolution model:
 
-1. **Master record** — `oslc_plm:Part` (concept resource URI per the OSLC CM base spec): the identity layer.
+1. **Master record** — `oslc_plm:Part` (concept resource URI per the OSLC Configuration Management base spec): the identity layer.
 2. **Revisions / iterations** — `oslc_plm:Part` version resources: the versioned content layer.
 3. **BOM line / occurrence** — `oslc_plm:PartUsage` version resources: the relationship layer (reified).
 4. **A filter pass** that consumes (a) a configuration / change-state, (b) variant option choices, (c) effectivity parameters, and yields a single revision of each in-scope part and the surviving usage links.
@@ -77,14 +77,14 @@ Windchill's variant-management subsystem (Product Family / Configurable Modules 
 - A Windchill **Choice** → `oslc:OptionValue`.
 - An **assigned expression** on a configurable module → `oslc:VariabilityCondition` rendered as an AST of `and`/`or`/`not`/`optionEquals`.
 
-Windchill applies the Option Filter *first* (before the ConfigSpec / Effectivity ConfigSpec runs). The OSLC CM extensions specify variability-before-effectivity resolution, which matches Windchill's order.
+Windchill applies the Option Filter *first* (before the ConfigSpec / Effectivity ConfigSpec runs). The OSLC Configuration Management extensions specify variability-before-effectivity resolution, which matches Windchill's order.
 
 Windchill assigned expressions admit ranges and other constructs an adapter would need to lower to `optionEquals` terminals. Most production assignments resolve to flat conjunctions of equality terms, so the AST mapping is usually one-to-one. Rare cases involving Windchill's date-scoped option choices may require the adapter to combine variability and effectivity contexts.
 
 ### Resolution algorithm mapping
 
 ```
-OSLC CM extensions algorithm:        Windchill equivalent:
+OSLC resolution algorithm:           Windchill equivalent:
 ─────────────────────────────────    ──────────────────────────────────────
 Step 1 — Candidate version           ConfigSpec resolves the candidate
    resolution (Section 12)           revision for each Master reached by
@@ -274,7 +274,7 @@ Aras's Configurator Rules can express more complex constraints than the OSLC `an
 ### Resolution algorithm mapping
 
 ```
-OSLC CM extensions:                  Aras equivalent:
+OSLC resolution algorithm:           Aras equivalent:
 ─────────────────────────────────    ──────────────────────────────────────
 Step 1 — Candidate version           Lifecycle / Fix mechanism + Aras
    resolution                        Query Definition execution to enumerate
@@ -403,7 +403,7 @@ If interest in integration emerged in the future, OSLC would be a natural interf
 | Composite vs reference | Explicit — composite Usage = lifecycle-owned (black-diamond mapping from SysML v1); reference Usage = pointer | Implicit at best |
 | Specialization | `PartDefinition`-to-`PartDefinition` subclassification with feature subsetting and redefinition (e.g., `Sedan extends Vehicle` redefines `engine : Engine` to `engine : V6Engine`) | Flat `oslc_plm:alignsPart` — no specialization semantics; usages don't inherit through Part-to-Part relationships |
 | Variation point | `PartDefinition.isVariation = true` + `VariantMembership` to variant Usages; configurations produced by *binding* variants — intensional, inside the type lattice | `oslc:variabilityCondition` (Boolean over options) + `oslc_plm:effectivity` (date/serial/unit ranges) as records on PartUsage versions, resolved by *filtering* at query time — extensional, outside the type system |
-| Versioning of language elements | None at the language level (KerML/SysML are modelling languages, not configuration specs) — the *Systems Modeling API and Services 1.0* defines commit/branch at the repository/transaction layer, with an OSLC PSM | Per-element `oslc_config:VersionResource` selected by `oslc_config:Configuration` (OSLC CM) — finer-grained and lifecycle-oriented |
+| Versioning of language elements | None at the language level (KerML/SysML are modelling languages, not configuration specs) — the *Systems Modeling API and Services 1.0* defines commit/branch at the repository/transaction layer, with an OSLC PSM | Per-element `oslc_config:VersionResource` selected by `oslc_config:Configuration` (OSLC Configuration Management) — finer-grained and lifecycle-oriented |
 
 ### Definition vs Usage — mapping into OSLC PLM
 
@@ -425,7 +425,7 @@ This asymmetry is significant: a PLM system that wants to surface its effectivit
 
 ### Versioning — the layers are complementary, not in conflict
 
-SysML v2 has no element-level version mechanism in the language. The SysML v2 API defines commit/branch at the *repository* level (granularity of an entire model), with an OSLC PSM in its specification. OSLC Configuration Management's per-element selection of Part and PartUsage versions sits **cleanly beneath** any SysML v2 model layer: a SysML v2 PartDefinition can be mapped to an OSLC PLM Part with its own version timeline, and OSLC CM's resolution mechanisms (including `EffectivitySelections`) compose with — not against — SysML v2's repository-level versioning.
+SysML v2 has no element-level version mechanism in the language. The SysML v2 API defines commit/branch at the *repository* level (granularity of an entire model), with an OSLC PSM in its specification. OSLC Configuration Management's per-element selection of Part and PartUsage versions sits **cleanly beneath** any SysML v2 model layer: a SysML v2 PartDefinition can be mapped to an OSLC PLM Part with its own version timeline, and OSLC Configuration Management's resolution mechanisms (including `EffectivitySelections`) compose with — not against — SysML v2's repository-level versioning.
 
 ### Industry posture
 
@@ -438,7 +438,7 @@ SysML v2 has no element-level version mechanism in the language. The SysML v2 AP
 
 Given the absence of an alignment agenda, this comparison has no direct consequence for either specification. The points worth recording for the TC:
 
-1. **No conflict.** OSLC PLM's effectivity/variability filter pass adds capability that SysML v2 does not provide natively (especially effectivity); OSLC CM's per-element versioning composes cleanly beneath SysML v2's repository-level commit/branch model. The two designs do not constrain each other.
+1. **No conflict.** OSLC PLM's effectivity/variability filter pass adds capability that SysML v2 does not provide natively (especially effectivity); OSLC Configuration Management's per-element versioning composes cleanly beneath SysML v2's repository-level commit/branch model. The two designs do not constrain each other.
 2. **The shared term *PartUsage* refers to compatible intuitions.** SysML v2's treatment of `PartUsage` as a KerML `Feature` (an in-context occurrence) is consistent with the framing used here, where `oslc_plm:PartUsage` is the contribution unit and PartUsage versions are the post-filter survivors named in `EffectivitySelections.selects`. A reviewer familiar with SysML v2 will find the term reasonably orienting; the underlying constructs are different in expressiveness, but not in spirit.
 3. **Reviewers should not expect a mapping.** This document does not claim, and the TC should not assume, that the OSLC PLM model can round-trip with SysML v2. They are deliberately different designs serving different problem framings, and the asymmetry — particularly in the variability and effectivity dimensions — is intrinsic, not an accident of vocabulary choice.
 
