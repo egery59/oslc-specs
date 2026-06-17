@@ -1,0 +1,468 @@
+# Existing PLM Product Conformance Mapping
+
+*This document is informative. It is a companion to the normative `plm-spec.html` (PLM effectivity, `oslc_plm:EffectivitySelections`, `oslc_plm:effectivityContext`) and the normative `specs/core/oslc-variability-spec.html` (OSLC Variability — `oslc:VariabilitySelections`, the option model, `oslc:variabilityContext`).*
+
+## Scope and Purpose
+
+This document maps the abstract resources, predicates, and resolution algorithm defined by the OSLC PLM Effectivity model and the OSLC Variability specification onto the configuration-management concepts of three widely-deployed commercial PLM systems:
+
+- **PTC Windchill** (12.x / 13.x)
+- **Siemens Teamcenter** (Active Workspace / 14.x)
+- **Aras Innovator** (current releases, including Configurator Services / Variant Management)
+
+The purpose is to demonstrate to the OSLC-OP Configuration Management TC and to the OSLC PLM working group that the proposed mechanisms can be implemented as an adapter or native server against each of these products without doing violence to the product's data model. Where a clean mapping exists, this document records it. Where the spec or the product would need adjustment, the gap is named explicitly so the TC can decide whether to refine the spec or accept that adapter authors handle it.
+
+This document is *not* a Project Note in the OASIS sense and carries no normative weight; it is reviewer support material.
+
+## The Common Adapter Pattern
+
+All three products share a structural pattern that maps cleanly to the OSLC PLM + OSLC Variability resolution model:
+
+1. **Master record** — `oslc_plm:Part` (concept resource URI per the OSLC Configuration Management base spec): the identity layer.
+2. **Revisions / iterations** — `oslc_plm:Part` version resources: the versioned content layer.
+3. **BOM line / occurrence** — `oslc_plm:PartUsage` version resources: the relationship layer (reified).
+4. **A filter pass** that consumes (a) a configuration / change-state, (b) variant option choices, (c) effectivity parameters, and yields a single revision of each in-scope part and the surviving usage links.
+
+The OSLC specs describe this filter pass in resource-oriented terms: a configuration that contains `oslc_plm:EffectivitySelections` and/or `oslc:VariabilitySelections` is resolved by the server, which computes candidates via the base CM spec's Section 12, evaluates the effectivity records and variability conditions carried by the candidate versions against the contexts named by the configuration's `oslc_plm:effectivityContext` and `oslc:variabilityContext` properties, and populates the post-filter `selects` triples on the corresponding `EffectivitySelections` and `VariabilitySelections` resources. The product-specific work below shows how each vendor's existing model lands on that pattern.
+
+---
+
+## PTC Windchill
+
+### Data-model translation
+
+| OSLC concept | Windchill concept | Notes |
+|---|---|---|
+| `oslc_plm:Part` (concept) | `WTPartMaster` | The identity layer keyed by part number. |
+| `oslc_plm:Part` (version) | `WTPart` (iteration of a revision) | Windchill distinguishes revisions and iterations; OSLC versions correspond to iterations selected by a ConfigSpec. |
+| `oslc_plm:PartUsage` (concept) | `WTPartUsageLink` between a parent `WTPart` and a child `WTPartMaster` | Windchill's usage links point at the master; child revision is selected by ConfigSpec at navigation time. |
+| `oslc_plm:PartUsage` (version) | An effective iteration of a `WTPartUsageLink` | Usage links iterate with their parent revision; an adapter exposes each iteration as a PartUsage version. |
+| `oslc_plm:Effectivity` | A `WTDatedEffectivity`, `ProductLotNumberEffectivity`, `ProductBlockEffectivity`, `ProductSerialNumberEffectivity`, or `WTSerialNumberedEffectivity` attached to a `WTPart` via `EffectivityHelper.setEffectivityTarget` | One Windchill effectivity object → one OSLC Effectivity record. |
+| `oslc_plm:effectiveForEndItem` | The `EffContext` field on the Windchill effectivity record (the product instance / end item) | First-class in Windchill. |
+| `oslc_plm:EffectivityContext` | The `(end item, value)` pair supplied to an Effectivity ConfigSpec at navigation time | No standing resource in Windchill — typically constructed transiently per request. An adapter exposes it as an addressable resource. |
+| `oslc:OptionSet` / `Option` / `OptionValue` | Windchill Option Sets, Options, Choices | The terminology aligns directly. |
+| `oslc:VariabilityCondition` | An assigned expression on a configurable module evaluated by the Option Filter | Windchill's expression syntax is product-specific; an adapter renders it as a `oslc:VariabilityCondition` AST. |
+| `oslc:VariabilityContext` | An option-choice set supplied to the Option Filter | Like EffectivityContext, transient in Windchill — exposed as an addressable resource by the adapter. |
+
+### Effectivity mapping
+
+Windchill carries effectivity directly on the `WTPart` revision, with one effectivity object per `EffContext`. The mapping is straightforward:
+
+- `oslc_plm:effectiveValueType` is set per the effectivity object's Java class:
+  `WTDatedEffectivity` → `oslc_plm:Date`,
+  `ProductLotNumberEffectivity` → `oslc_plm:Lot`,
+  `ProductBlockEffectivity` → `oslc_plm:Lot` (Block is treated as Lot in OSLC for v1 — see Gaps below),
+  `WTSerialNumberedEffectivity` / `ProductSerialNumberEffectivity` → `oslc_plm:SerialNumber` or `oslc_plm:UnitNumber` depending on the part's trace code.
+- `oslc_plm:effectiveForEndItem` = the Windchill `EffContext` (the product instance — typically a `WTProductInstance2` or the top `WTPart`).
+- `oslc_plm:effectiveFrom` / `oslc_plm:effectiveTo` from the start/end fields on the Windchill effectivity record. Open-ended ranges (Windchill admits `00001–`, etc.) map to the absence-means-open semantics in the OSLC shape.
+- `oslc_plm:authorizedBy` = the authorizing Change Notice on the Windchill record (`PendingEffectivity` → `ActualEffectivity` audit linkage). This is the only widely-deployed PLM system with this metadata standardized; adapters in the other two systems will commonly leave `authorizedBy` absent.
+
+Multiple Windchill effectivity records on one part revision (different EffContexts, or different ranges) map to multiple `oslc_plm:Effectivity` resources referenced from `oslc_plm:effectivity` on the version. The OR semantics of the OSLC spec match Windchill's evaluation behavior.
+
+#### Release effectivity / supersede
+
+Windchill's supersedes/supersededBy relationship between two revisions records the audit trail, but the actual revision selection in a configured BOM is performed by an Effectivity ConfigSpec that, given an `(EffContext, type, value)`, returns the revision whose effectivity range includes the value. This maps to `oslc_plm:effectiveReplacement` on the older revision: when a context falls within the older record's range AND a replacement is named, the resolver substitutes the named revision.
+
+In adapter implementations, the supersede link in Windchill is typically expressed as:
+- The older revision carries an `oslc_plm:Effectivity` record covering its valid range with `effectiveReplacement` pointing at the newer revision when the context is outside that range. (Note: Windchill's own model doesn't have a "replace if context outside this record" semantics; it resolves by finding *any* covering record. The adapter has equivalent expressive power by emitting an `Effectivity` record on the *newer* revision covering its range. This is the simpler and more direct mapping.)
+
+In other words: the OSLC `Effectivity` records form a partition of the context space across revisions of one master; resolution picks the revision whose record covers the supplied context. This is exactly how Windchill's `EffConfigSpecGroup` evaluates.
+
+### Variability mapping
+
+Windchill's variant-management subsystem (Product Family / Configurable Modules / Option Filter) maps to the OSLC variability model:
+
+- A Windchill **Option Set** → `oslc:OptionSet`.
+- A Windchill **Option** → `oslc:Option`.
+- A Windchill **Choice** → `oslc:OptionValue`.
+- An **assigned expression** on a configurable module → `oslc:VariabilityCondition` rendered as an AST of `and`/`or`/`not`/`optionEquals`.
+
+Windchill applies the Option Filter *first* (before the ConfigSpec / Effectivity ConfigSpec runs). The OSLC Configuration Management extensions specify variability-before-effectivity resolution, which matches Windchill's order.
+
+Windchill assigned expressions admit ranges and other constructs an adapter would need to lower to `optionEquals` terminals. Most production assignments resolve to flat conjunctions of equality terms, so the AST mapping is usually one-to-one. Rare cases involving Windchill's date-scoped option choices may require the adapter to combine variability and effectivity contexts.
+
+### Resolution algorithm mapping
+
+```
+OSLC resolution algorithm:           Windchill equivalent:
+─────────────────────────────────    ──────────────────────────────────────
+Step 1 — Candidate version           ConfigSpec resolves the candidate
+   resolution (Section 12)           revision for each Master reached by
+                                     navigation. For the BOM case, the
+                                     adapter walks WTPartUsageLink iterations
+                                     and returns the relevant PartUsage
+                                     versions.
+
+Step 2a — Variability binding        Windchill Option Filter, evaluating
+                                     assigned expressions on configurable
+                                     modules against the supplied
+                                     option-choice set.
+
+Step 2b — Effectivity binding        Windchill Effectivity ConfigSpec
+                                     (EffConfigSpecGroup), evaluating
+                                     (EffContext, type, value) against
+                                     the revisions' effectivity records.
+
+Step 3 — Final resolution            Returns the configured BOM (or 404 for
+                                     concept URIs with no surviving binding).
+```
+
+### Conformance checklist for a Windchill adapter
+
+To claim conformance to the OSLC PLM Effectivity model (`plm-spec.html`) and the OSLC Variability specification (`specs/core/oslc-variability-spec.html`), a Windchill OSLC adapter would:
+
+1. Expose `WTPart` revisions as `oslc_plm:Part` version resources with `oslc_plm:effectivity` populated from the part's Windchill effectivity records.
+2. Expose `WTPartUsageLink` iterations as `oslc_plm:PartUsage` version resources, with their own `effectivity` and `variabilityCondition` properties as authored in the configurable structure.
+3. Accept `oslc_plm:EffectivityContext` resources at URIs and translate them to Windchill `EffContext`-keyed effectivity criteria.
+4. Accept `oslc:VariabilityContext` resources at URIs and translate them to option-choice sets for the Option Filter.
+5. Honor the `oslc_plm:effectivityContext` and `oslc:variabilityContext` properties on an `oslc_config:Configuration`, reading them as the contexts against which the configuration's `oslc_plm:EffectivitySelections.selects` and `oslc:VariabilitySelections.selects` are computed. The Configuration's URL is the single entry point; no request-time header or query-parameter mechanism is involved.
+6. Apply variability-before-effectivity ordering, returning the resolved BOM as a set of bound `Part` and `PartUsage` versions.
+7. Populate `oslc_plm:authorizedBy` from the authorizing Change Notice on each effectivity record — Windchill is the natural source for this metadata and adapters SHOULD emit it.
+
+### Known gaps and recommendations
+
+1. **Block effectivity.** Windchill distinguishes Block from Lot; this proposal currently has only `oslc_plm:Lot`. An adapter folds Block into Lot, which loses fidelity. A future revision should add `oslc_plm:Block` to the value-type identifiers.
+2. **MSN effectivity.** Windchill's Model Serial Number (model-qualified serial) doesn't have a direct equivalent. An adapter can carry the model via `oslc_plm:effectivityModel` and the serial via `oslc_plm:effectivitySerialNumber`, but the cross-product semantics (MSN as a *single* keyed identifier) is implicit.
+3. **Trace code on the master.** Windchill restricts which effectivity types a part can carry. The OSLC PLM spec doesn't express this constraint; adapters may surface attempted combinations that Windchill would reject. This is a feature the OSLC-OP TC could consider as a future addition (`oslc_plm:effectivityTraceCode` on a Part master).
+4. **Custom ConfigSpec extensions.** Windchill admits custom Java ConfigSpec classes that go beyond range matching. Predicates expressible only via custom ConfigSpecs may not have a clean OSLC representation. An adapter SHOULD report a 501 Not Implemented on attempted requests against such structures and document the limitation.
+
+---
+
+## Siemens Teamcenter
+
+### Data-model translation
+
+| OSLC concept | Teamcenter concept | Notes |
+|---|---|---|
+| `oslc_plm:Part` (concept) | `Item` (with `item_id`) | The identity layer. |
+| `oslc_plm:Part` (version) | `ItemRevision` | Direct mapping. |
+| `oslc_plm:PartUsage` (concept) | `ChildElement` / occurrence within a `BOMViewRevision` | Teamcenter has explicit occurrence objects. |
+| `oslc_plm:PartUsage` (version) | An occurrence in a specific `BOMViewRevision` | One BOMViewRevision iteration = one usage version. |
+| `oslc_plm:Effectivity` | Effectivity object on a `ReleaseStatus` of an ItemRevision (*revision effectivity*) OR on an occurrence (*occurrence effectivity*) | Teamcenter has two attachment points; PLM spec covers both naturally through Part and PartUsage versions. |
+| `oslc_plm:effectiveForEndItem` | The End Item / Configuration Item bound to the Effectivity object | First-class in Teamcenter. |
+| `oslc_plm:EffectivityContext` | The Effectivity Cursor on a Revision Rule plus a Variant Rule | Compound in Teamcenter; the adapter exposes the cursor as a single context resource. |
+| `oslc:OptionSet` | An Option Set in Modular Variants | Direct mapping. |
+| `oslc:Option` / `OptionValue` | Option family / value in Modular Variants | Direct mapping. |
+| `oslc:VariabilityCondition` | A Variant Condition expressed in MVL (Modular Variant Language) | The MVL boolean expression maps to the AST of `and`/`or`/`not`/`optionEquals`. |
+| `oslc:VariabilityContext` | A Variant Rule (a complete assignment over the Option Set) | Direct mapping. |
+
+### Effectivity mapping
+
+Teamcenter's two effectivity attachment points map naturally to the OSLC PLM model:
+
+- **Revision effectivity** (Effectivity on `ReleaseStatus` of an `ItemRevision`) → `oslc_plm:Effectivity` carried by the OSLC `Part` version. Use `effectiveReplacement` when an effective range hands off to a sibling revision.
+- **Occurrence effectivity** (Effectivity on the BOM child element) → `oslc_plm:Effectivity` carried by the OSLC `PartUsage` version. This handles the "is this child in this BOM under this date / unit?" question without needing a separate placement.
+
+Teamcenter Effectivity Groups (named, reusable, multi-tuple effectivity objects) map to multiple `oslc_plm:Effectivity` resources on a single version, where each resource captures one `(end_item, range)` tuple from the group. The OR semantics of multiple OSLC records reproduce the OR semantics of the Effectivity Group's tuples. Where the Effectivity Group is shared across many occurrences in Teamcenter, the OSLC adapter MAY expose it as a single `oslc_plm:Effectivity` resource and reference it from each version's `oslc_plm:effectivity` link (the resource is the same; only the references differ).
+
+#### Lifecycle-state-bound effectivity
+
+Teamcenter's effectivity sits on a `ReleaseStatus`, and a single ItemRevision may have multiple ReleaseStatuses (Prototype, Pre-production, Production) each with its own effectivity. The OSLC PLM spec doesn't currently distinguish these — all records OR together on the version. Teamcenter adapters MAY emit one OSLC `Effectivity` per ReleaseStatus, with the lifecycle state captured in `dcterms:title` (e.g., `"Production effectivity"`) for diagnosis. A future spec revision could add `oslc_plm:lifecycleState` on `Effectivity` to make this distinction first-class.
+
+### Variability mapping
+
+Teamcenter Modular Variant Language (MVL) is a direct expression-tree representation that lowers cleanly to OSLC `VariabilityCondition`:
+
+```mvl
+Engine = V8 & Market = EU
+```
+
+becomes
+
+```turtle
+[ a oslc:VariabilityCondition ;
+  oslc:and (
+    [ a oslc:VariabilityCondition ;
+      oslc:optionEquals ( tc:Option/Engine tc:OV/Engine-V8 ) ]
+    [ a oslc:VariabilityCondition ;
+      oslc:optionEquals ( tc:Option/Market tc:OV/Market-EU ) ]
+  ) ]
+```
+
+MVL admits `|` (OR), `!` (NOT), parentheses, and multi-value equality (`Engine = V6,V8`). All four constructs lower to the OSLC AST cleanly. Classic Variants (top-level option families) are a special case of the same model and need no separate treatment.
+
+### Resolution algorithm mapping
+
+Teamcenter resolution combines a **Revision Rule** (which selects a single ItemRevision per Item from an ordered clause list) and a **Variant Rule** (which selects which occurrences participate). The OSLC two-step resolution maps as:
+
+- Step 1 (Candidate version resolution) corresponds to Teamcenter's Revision Rule selecting an ItemRevision per Item. For a BOM, this includes occurrence selection from the BOMViewRevision.
+- Step 2a (Variability binding) is performed by the Teamcenter Variant Rule application.
+- Step 2b (Effectivity binding) is performed by the Teamcenter Effectivity Cursor on the Revision Rule.
+
+Note that Teamcenter doesn't have a literal "substitute the candidate with a sibling revision" step — substitution emerges because the Revision Rule retries the next-older revision when the current one's effectivity range doesn't cover the cursor. Functionally identical to the OSLC `effectiveReplacement` outcome.
+
+#### Nested effectivity at Configuration Item boundaries
+
+Teamcenter swaps the end-item / unit-namespace at Configuration Item boundaries when traversing a multi-supplier structure. The OSLC `EffectivityContext` is flat. An adapter has two options:
+
+1. Compute the full traversal server-side and emit only the resolved BOM (the recommended approach — the adapter implements the namespace switching internally).
+2. Surface multiple `EffectivitySelections` resources in a nested-context configuration, with each Selection scoped to a different end-item namespace.
+
+Option 1 is cleaner for client interoperability. Option 2 may be useful for tooling that needs to introspect the nesting; the OSLC-OP TC could consider whether to standardize a nested-context mechanism in a future revision.
+
+### Conformance checklist for a Teamcenter adapter
+
+1. Expose `ItemRevision` as `oslc_plm:Part` versions, with `oslc_plm:effectivity` populated from the revision's `ReleaseStatus` effectivities.
+2. Expose BOM occurrences as `oslc_plm:PartUsage` versions, with `oslc_plm:effectivity` populated from occurrence effectivities and `oslc:variabilityCondition` populated from MVL Variant Conditions.
+3. Accept `oslc_plm:EffectivityContext` resources and translate to a Revision Rule's Effectivity Cursor plus End Item.
+4. Accept `oslc:VariabilityContext` resources and translate to a Variant Rule application.
+5. Honor the `oslc_plm:effectivityContext` and `oslc:variabilityContext` properties on the containing `oslc_config:Configuration`; no request-time header or query parameter is involved.
+6. Apply variability-before-effectivity ordering.
+7. Compute nested-effectivity namespace switching server-side; do not require clients to assemble per-CI contexts unless the adapter explicitly supports the nested-selections pattern.
+
+### Known gaps and recommendations
+
+1. **Override / Precise rule clauses.** Teamcenter Revision Rules admit `Override` and `Precise` clauses that pin a specific revision regardless of effectivity. The OSLC predicate model doesn't have an explicit "pinned" outcome; a substitution-only Effectivity record (open-ended `effectiveFrom`/`effectiveTo`, with `effectiveReplacement` pointing at the pinned version) is the workaround. The OSLC-OP TC might consider an `oslc_plm:pinned` outcome explicitly.
+2. **Variant Rule check-out / authoring.** Teamcenter Variant Rules can be authored, version-controlled, and approved. The OSLC `oslc:VariabilityContext` is referenced from an `oslc_config:Configuration` via the `oslc:variabilityContext` extension property and is treated as an inert input to selection computation. Authoring workflows on `VariabilityContext` are not addressed in this proposal; an adapter might expose Variant Rules as versioned resources separate from their use as contexts.
+3. **MVL `?` (unknown) values.** MVL admits a three-valued logic for incomplete configurations. The OSLC spec specifies three-valued logic for partial contexts, which matches; an adapter SHOULD ensure the lowering preserves the Kleene-style semantics Teamcenter uses.
+
+---
+
+## Aras Innovator
+
+### Data-model translation
+
+| OSLC concept | Aras concept | Notes |
+|---|---|---|
+| `oslc_plm:Part` (concept) | `Part` (master record) | Aras's `Part` is the master; versions are revisions. |
+| `oslc_plm:Part` (version) | `Part` revision | Aras versions parts via the Lifecycle / Fix mechanism. |
+| `oslc_plm:PartUsage` (concept) | `Part BOM` relationship (parent-Part to child-Part) | Aras BOM rows are relationship resources; the OSLC PartUsage reification matches this directly. |
+| `oslc_plm:PartUsage` (version) | A specific Part BOM row in a specific Part revision | Each parent revision has its own copy of the BOM rows. |
+| `oslc_plm:Effectivity` | An Aras Effectivity Expression on a Part BOM row | Note the placement is on the *relationship row*, not on the Part revision. PartUsage reification covers this naturally. |
+| `oslc_plm:effectiveForEndItem` | The Aras `Model` variable in the Effectivity Expression | Configurable, but conventionally named Model. |
+| `oslc_plm:EffectivityContext` | An Aras Effectivity Criteria | An assignment to the Effectivity Variables passed to the Effectivity Resolution Engine. |
+| `oslc:OptionSet` | Aras Variant Management Feature Set (with Configurator Context) | Strong fit conceptually. |
+| `oslc:Option` | Feature | |
+| `oslc:OptionValue` | Option (Aras's terminology — confusing relative to OSLC) | The Aras name "Option" corresponds to an OSLC OptionValue. |
+| `oslc:VariabilityCondition` | A Configurator Rule expression over Features and Options | The Aras rule language is product-specific; an adapter renders it as an OSLC AST. |
+| `oslc:VariabilityContext` | A Configurator selection (the resolved Variability Item context) | |
+
+### Effectivity mapping
+
+The clean PartUsage-as-version mapping makes Aras's relationship-row effectivity placement essentially free in OSLC: each row exposed as a `PartUsage` version carries its own `oslc_plm:effectivity` link. The adapter walks the Aras Effectivity Expression and emits one `Effectivity` record per term:
+
+```
+Aras expression:
+<EQ><variable id="MODEL"/><named-constant id="ITEM:M-100"/></EQ>
+<EQ><variable id="UNIT"/><constant type="int">11</constant></EQ>
+```
+
+becomes:
+
+```turtle
+[ a oslc_plm:Effectivity ;
+  oslc_plm:effectiveValueType oslc_plm:UnitNumber ;
+  oslc_plm:effectiveForEndItem aras:Item/M-100 ;
+  oslc_plm:effectiveFrom 11 ;
+  oslc_plm:effectiveTo 11 ]
+```
+
+Range semantics in Aras are carried on the *criterion* side (the supplied context), not the expression. The OSLC model carries ranges on the predicate side (`effectiveFrom`/`effectiveTo`). The adapter is responsible for converting Aras's pointwise expressions plus client-side range criteria into the equivalent OSLC ranged predicate. In practice, expressions like `UNIT ≤ 10` are authored client-side in Aras and become explicit ranges in the OSLC view, which is cleaner.
+
+#### No native "replace" outcome
+
+Aras does not natively replace one BOM row with another via the Effectivity Resolution Engine — replacement is modeled as two separate rows with disjoint date/unit expressions, each evaluated independently. This maps trivially to the OSLC model: two distinct `PartUsage` versions, each with its own `Effectivity`, and the configuration's `EffectivitySelections` selects whichever survives. The `effectiveReplacement` outcome from the OSLC spec is not required for Aras conformance, though an adapter MAY use it as a convenience to collapse adjacent ranges in the surfaced data.
+
+### Variability mapping
+
+Aras's Variant Management is layered above Effectivity Services and is conceptually parallel. The Variant Management Feature/Option/Rule model lowers to OSLC's OptionSet/Option/OptionValue/VariabilityCondition with one caveat:
+
+- **Naming collision.** Aras uses "Option" for what OSLC calls "OptionValue", and uses "Feature" for what OSLC calls "Option". The adapter performs a consistent translation. This is a vocabulary impedance mismatch only; the data model fits cleanly.
+
+Aras's Configurator Rules can express more complex constraints than the OSLC `and`/`or`/`not`/`optionEquals` AST — including "if A then B" implications, cross-feature exclusions, and assertions over counts. The most common subset (boolean over equality terminals) lowers directly. Out-of-subset rules can be approximated by their boolean equivalents where possible (e.g., `A → B` ≡ `¬A ∨ B`) or surfaced as a 501 Not Implemented on configurations that require them.
+
+### Resolution algorithm mapping
+
+```
+OSLC resolution algorithm:           Aras equivalent:
+─────────────────────────────────    ──────────────────────────────────────
+Step 1 — Candidate version           Lifecycle / Fix mechanism + Aras
+   resolution                        Query Definition execution to enumerate
+                                     candidate BOM rows.
+
+Step 2a — Variability binding        Configurator Services rule evaluation
+                                     against the Variability Item context.
+
+Step 2b — Effectivity binding        Effectivity Resolution Engine filtering
+                                     against the supplied Effectivity
+                                     Criteria.
+
+Step 3 — Final resolution            The 100% resolved structure delivered
+                                     by Aras's Query Definition Engine.
+```
+
+The variability-before-effectivity ordering matches Aras's documented Configurator-then-Effectivity layering.
+
+### Conformance checklist for an Aras adapter
+
+1. Expose Aras `Part` revisions as `oslc_plm:Part` versions.
+2. Expose Aras Part BOM rows as `oslc_plm:PartUsage` versions, each with its own `oslc_plm:effectivity` from the row's Effectivity Expression and `oslc:variabilityCondition` from the row's Variant rule reference.
+3. Accept `oslc_plm:EffectivityContext` resources and translate to Aras Effectivity Criteria (one variable assignment per `effectivity*` property).
+4. Accept `oslc:VariabilityContext` resources and translate to a Configurator selection / Variability Item context.
+5. Honor the `oslc_plm:effectivityContext` and `oslc:variabilityContext` properties on the containing `oslc_config:Configuration`; no request-time header or query parameter is involved.
+6. Apply variability-before-effectivity ordering.
+7. Translate Aras's "Option" terminology to OSLC `OptionValue` consistently in both serialization and link rendering, to avoid downstream confusion.
+
+### Known gaps and recommendations
+
+1. **Custom Effectivity Variables.** Aras admins can declare new variables (e.g., Plant, Region) of types Integer/Date/String/List/Item. The OSLC PLM `EffectivityContext` shape lists a fixed set of properties. An adapter SHOULD either (a) map custom variables to `oslc_plm:effectivityModel` or `effectivityLot` where the semantics fit, or (b) emit them as extension properties under a vendor namespace. A future spec revision could add an open-extensions pattern (e.g., `oslc_plm:effectivityParameter` with key/value pairs).
+2. **Configurator Context (rule scoping).** Aras's recent Configurator Context scopes which rule sets apply per program era. The OSLC `VariabilityContext` doesn't currently include a rule-scope reference. An adapter MAY include it as an additional property; future spec work could add `oslc:variabilityRuleScope`.
+3. **Aras Supersede.** Aras's Supersede globally replaces one released Part with another and has known edge cases in BOM contexts (community-reported). The OSLC `effectiveReplacement` outcome is more disciplined; an Aras adapter MAY emit `effectiveReplacement` triples to express supersede with cleaner semantics than the native model allows.
+4. **Lifecycle / Fix vs. OSLC versioning.** Aras's "Fix" lifecycle behavior locks a released Part to specific child revisions at release time; subsequent revisions of a child are not auto-pulled into the released parent. This is an important authoring-semantics difference from the OSLC base CM spec's "latest" stream model. Aras adapters SHOULD document which OSLC stream semantics map to which Aras lifecycle states.
+
+---
+
+## Cross-Product Summary
+
+### Effectivity dimension coverage
+
+| Effectivity dimension | OSLC value-type | Windchill | Teamcenter | Aras |
+|---|---|---|---|---|
+| Date | `oslc_plm:Date` | `WTDatedEffectivity` | Date effectivity | Date variable |
+| Unit number | `oslc_plm:UnitNumber` | Serial/MSN (depending on trace code) | Unit effectivity (`(end_item, unit_range)`) | Unit variable |
+| Serial number | `oslc_plm:SerialNumber` | `WTSerialNumberedEffectivity` | Effectivity Group tuple | Configurable variable |
+| Lot | `oslc_plm:Lot` | `ProductLotNumberEffectivity` | Not first-class | Configurable variable |
+| Model | `oslc_plm:Model` | Model code on configurable products | End Item / Configuration Item (acts as namespace, not value) | Model variable |
+| Block (aerospace) | (gap — folds into Lot for v1) | `ProductBlockEffectivity` | Block via Effectivity Group | Configurable variable |
+| End-item / namespace | `oslc_plm:effectiveForEndItem` | `EffContext` | End Item | Model variable (named-constant of Item type) |
+
+### Variability dimension coverage
+
+| Variability concept | OSLC | Windchill | Teamcenter | Aras |
+|---|---|---|---|---|
+| Option container | `oslc:OptionSet` | Option Set | Modular Variants Option Set | Feature Set |
+| Option family | `oslc:Option` | Option | Option family | Feature |
+| Option value | `oslc:OptionValue` | Choice | Option value | Option (Aras's term) |
+| Boolean condition | `oslc:VariabilityCondition` (AST) | Assigned expression on configurable module | Variant Condition (MVL) | Configurator Rule |
+| Context | `oslc:VariabilityContext` | Option Filter input | Variant Rule | Configurator selection |
+
+### Resolution-order alignment
+
+All three products support the variability-before-effectivity ordering specified by the OSLC PLM Effectivity model and the OSLC Variability specification:
+
+- Windchill: Option Filter → ConfigSpec → Effectivity ConfigSpec.
+- Teamcenter: Variant Rule (independent) → Revision Rule with Effectivity Cursor.
+- Aras: Configurator Services → Effectivity Services.
+
+### Authorization metadata
+
+Only Windchill standardizes change-authorization linkage on effectivity (Pending → Actual through Change Notices). Adapters for the other two products will commonly omit `oslc_plm:authorizedBy`. The OSLC-OP TC may wish to mark this property as MAY rather than SHOULD, with implementation-specific recommendations per product.
+
+### Override / pinning
+
+- Teamcenter: explicit (`Override` and `Precise` Revision Rule clauses).
+- Windchill: implicit (custom ConfigSpec classes).
+- Aras: implicit (Fix lifecycle locks child revisions; supersede globally replaces).
+
+The OSLC `effectiveReplacement` covers the substitution case but not the "pin this regardless of context" case. Future spec work could add an explicit pinned outcome.
+
+---
+
+## Recommendations to the OSLC-OP TC (PLM and Variability working groups)
+
+Based on the three-product mapping above, the TC may wish to consider:
+
+1. **Add `oslc_plm:Block` to the effectivity value-type identifiers.** Block effectivity is standardized in aerospace PLM (and is a distinct concept from Lot in Windchill). Folding Block into Lot is a documented gap.
+2. **Specify open-extension mechanism for `oslc_plm:EffectivityContext`.** Aras's customizable variables and similar features in other products suggest the fixed property list in `EffectivityContextShape` will be insufficient. An `oslc_plm:effectivityParameter` (key/value bag) with declared types would help adapters surface domain-specific variables.
+3. **Standardize lifecycle-state-keyed effectivity.** Teamcenter's per-ReleaseStatus effectivity is a useful pattern that the spec currently underspecifies (records OR together regardless of state). Adding `oslc_plm:lifecycleState` on `Effectivity` would let adapters preserve the distinction.
+4. **Consider an explicit pinned outcome.** Teamcenter's Precise and Override clauses are common authoring constructs without a clean OSLC equivalent.
+5. **Make `authorizedBy` MAY rather than SHOULD.** Only Windchill has the metadata reliably; an aspirational SHOULD may prompt adapters to invent linkage that doesn't exist in the source system.
+6. **Document the "Option vs. OptionValue" naming hazard.** Aras uses "Option" for OSLC's "OptionValue". An informative note in the PLM spec would prevent confusion.
+
+Each of these is a small, well-scoped revision that would improve adapter ergonomics without changing the core resolution model. None is blocking for an initial OSLC-OP review.
+
+## Source material
+
+This document synthesizes findings from the research conducted during the design of the proposed extensions:
+
+- **Windchill**: PTC Help Center articles on Effectivity (r12.0–r13.0), the Windchill REST EffectivityMgmt domain, the PTC eBook *Understanding Configuration Management in Windchill*, and PTC Community threads on Effectivity API, Custom ConfigSpecs, and Supersede.
+- **Teamcenter**: Siemens Documentation on Revision Rules, Effectivity, Modular Variants, and Variant Rules; Saratech and Swoosh Technologies practitioner documentation; the `tcplmbasics` series on Revision/Nested Effectivity and Occurrence Effectivity.
+- **Aras**: *Aras Innovator 31 — Effectivity Services Programmer's Guide* (D-008103), *Aras Innovator 29 — Configurator Services Programmer's Guide*, *Aras Variant Management 33 Administrator Guide* (D-007881), the *Demystifying Effectivity with Aras Innovator Version 12* blog, and the ArasLabs effectivity-sample-application reference repository.
+
+Specific product-version coverage is current as of 2026 product releases; major-version changes in any of the three systems may require this mapping document to be revised.
+
+---
+
+## Prior Art — SysML v2 (OMG): Part / PartUsage and Variation
+
+OMG **SysML v2** (Final Adopted, July 2025; built on **KerML 1.0**) uses the terms `PartDefinition` and `PartUsage` for core metaclasses of its formal modelling language. The OSLC PLM specification uses `Part` and `PartUsage` for related-but-different concepts in a product-lifecycle / BOM context. Because the terminology overlaps and reviewers will reasonably ask how the two relate, this section records a side-by-side comparison as background.
+
+**There is no current business case for aligning OSLC PLM with SysML v2.** SysML v2 and PLM are distinct worlds today — different tool ecosystems, different vendor commitments, different problem framings (systems modelling vs product-lifecycle management). Neither the SysML v2 community nor the PLM community has expressed interest in converging the two data models. PLM vendors that ship SysML v2 modeller integrations (Siemens, PTC) do so at the *tool integration* layer — they connect their SysML v2 modellers to their PLM systems — not by aligning their PLM data models with SysML v2 semantics.
+
+If interest in integration emerged in the future, OSLC would be a natural interface for it: there are proposed OASIS OSLC vocabularies on both sides — the OASIS OSLC PLM specification under refinement here, and the OASIS OSLC SysML v2 vocabulary that renders the SysML v2 language in RDF. But this section does not anticipate or propose such an integration. It exists solely to clarify the terminology overlap and to record where the two models genuinely differ, so that a reader who works in both worlds is not misled by the shared vocabulary.
+
+### Class structure
+
+| Aspect | SysML v2 | OSLC PLM (current) |
+|---|---|---|
+| Definition (the *kind*) | `PartDefinition`, a KerML `Classifier` (transitively `ItemDefinition` → `OccurrenceDefinition` → `Class` → `Classifier` → `Type`) | `oslc_plm:Part` (subclass of `oslc_am:Resource`) |
+| Usage (the *occurrence in a context*) | `PartUsage`, a KerML `Feature` (transitively `ItemUsage` → `OccurrenceUsage` → `Usage` → `Feature`); MUST subset the base `parts` PartUsage in the Systems Model Library | `oslc_plm:PartUsage` (subclass of `oslc_am:Resource`) |
+| Definition / Usage separation | **Strict and pervasive** — every Definition metaclass (Part, Action, State, Item, Port, Attribute, …) has a matching Usage metaclass | **Conflated** — `oslc_plm:Part` plays both roles (the kind being versioned *and* the top-level "system as a whole" composed under no parent) |
+| Typing relationship | `PartUsage` is typed by *one or more* `PartDefinition`s (KerML `FeatureTyping`) | `oslc_plm:representsPart` links a `PartUsage` to *one* `Part` |
+| Multiplicity | Native — `wheel : Wheel[4]` | None — quantity must be an attribute or distinct PartUsage instances |
+| Composite vs reference | Explicit — composite Usage = lifecycle-owned (black-diamond mapping from SysML v1); reference Usage = pointer | Implicit at best |
+| Specialization | `PartDefinition`-to-`PartDefinition` subclassification with feature subsetting and redefinition (e.g., `Sedan extends Vehicle` redefines `engine : Engine` to `engine : V6Engine`) | Flat `oslc_plm:alignsPart` — no specialization semantics; usages don't inherit through Part-to-Part relationships |
+| Variation point | `PartDefinition.isVariation = true` + `VariantMembership` to variant Usages; configurations produced by *binding* variants — intensional, inside the type lattice | `oslc:variabilityCondition` (Boolean over options) + `oslc_plm:effectivity` (date/serial/unit ranges) as records on PartUsage versions, resolved by *filtering* at query time — extensional, outside the type system |
+| Versioning of language elements | None at the language level (KerML/SysML are modelling languages, not configuration specs) — the *Systems Modeling API and Services 1.0* defines commit/branch at the repository/transaction layer, with an OSLC PSM | Per-element `oslc_config:VersionResource` selected by `oslc_config:Configuration` (OSLC Configuration Management) — finer-grained and lifecycle-oriented |
+
+### Definition vs Usage — mapping into OSLC PLM
+
+The natural mapping `oslc_plm:Part ≈ PartDefinition` and `oslc_plm:PartUsage ≈ PartUsage` is **directional but not isomorphic**. OSLC PLM's `Part` covers both the SysML v2 *definition* role (typing, library identity) and the role that a top-level PartUsage plays in SysML v2 (the system as a whole). A consumer crossing the boundary therefore needs to know whether a given `oslc_plm:Part` URI is being used as a kind or as a root occurrence — context the spec does not currently make explicit.
+
+### Variation models — fundamentally different posture
+
+The most consequential difference is in the variation model:
+
+- **SysML v2 is intensional.** Variation is part of the type/feature lattice. A `PartDefinition` flagged `isVariation = true` owns `VariantMembership`s pointing at variant `Usage`s. A *configuration* in SysML v2 terms is a *binding of variants* — a feature-subsetting/redefinition operation handled by KerML's semantic machinery.
+- **OSLC PLM (with OSLC Variability) is extensional.** Variation lives in *records on candidate versions* (`oslc:variabilityCondition` for option-space Booleans on any versioned resource; `oslc_plm:effectivity` for date/serial/unit ranges on PLM Parts and PartUsages). An `oslc_config:Configuration` carries `oslc_plm:effectivityContext` and `oslc:variabilityContext` extension properties identifying the contexts; the server applies these as a *filter pass* when populating the post-filter `selects` of the configuration's `oslc_plm:EffectivitySelections` and `oslc:VariabilitySelections`.
+
+Translating one to the other:
+
+- **SysML v2 → OSLC PLM** is reasonably clean: a variation point with N `VariantMembership`s maps to N alternative PartUsages each carrying a `variabilityCondition` keyed on the option dimension that selects between them.
+- **OSLC PLM → SysML v2** is *lossy*. Arbitrary Boolean `variabilityCondition` expressions do not factor cleanly into variant trees, and `oslc_plm:effectivity` — calendar/serial/unit ranges — has **no native SysML v2 counterpart**. Effectivity would have to be encoded as attributes on the Usage plus an external resolver, which puts the resolution *outside* the SysML v2 model rather than inside it.
+
+This asymmetry is significant: a PLM system that wants to surface its effectivity-resolved configuration to a SysML v2 consumer can do so (the SysML v2 side just sees the resolved, post-filter view), but a SysML v2 model with intensional variation cannot fully describe an OSLC PLM configuration's lifecycle/timing axis.
+
+### Versioning — the layers are complementary, not in conflict
+
+SysML v2 has no element-level version mechanism in the language. The SysML v2 API defines commit/branch at the *repository* level (granularity of an entire model), with an OSLC PSM in its specification. OSLC Configuration Management's per-element selection of Part and PartUsage versions sits **cleanly beneath** any SysML v2 model layer: a SysML v2 PartDefinition can be mapped to an OSLC PLM Part with its own version timeline, and OSLC Configuration Management's resolution mechanisms (including `EffectivitySelections`) compose with — not against — SysML v2's repository-level versioning.
+
+### Industry posture
+
+- **PTC** and **Siemens** ship tool-level integrations between their SysML v2 modellers and their PLM systems (Windchill, Teamcenter respectively). These are application integrations — connecting two distinct authoring environments — not commitments to align Windchill's or Teamcenter's *PLM data model* with SysML v2 semantics. PTC has cited OSLC as one possible interface for such integrations.
+- **Aras** stays tool-agnostic in its MBSE messaging; no public SysML v2-specific commitment was found in publicly available material.
+- **OASIS OSLC SysML v2 vocabulary** exists as an RDF rendering of the SysML v2 *language* itself. It is not a mapping into OSLC PLM concepts. No formal OMG- or OASIS-blessed SysML v2 ↔ OSLC PLM data-model mapping exists or is in progress at the time of this writing.
+- **No active community effort** (in either the SysML v2 or the PLM community) is pursuing alignment of the two data models. The SysML v2 side treats variation, multiplicity, and specialization through its KerML feature lattice; the PLM side treats variation, effectivity, and configuration through extensional records and configuration-management resolution. These remain different, deliberate design choices.
+
+### Bearing on the OSLC PLM Effectivity and OSLC Variability specifications
+
+Given the absence of an alignment agenda, this comparison has no direct consequence for either specification. The points worth recording for the TC:
+
+1. **No conflict.** OSLC PLM's effectivity/variability filter pass adds capability that SysML v2 does not provide natively (especially effectivity); OSLC Configuration Management's per-element versioning composes cleanly beneath SysML v2's repository-level commit/branch model. The two designs do not constrain each other.
+2. **The shared term *PartUsage* refers to compatible intuitions.** SysML v2's treatment of `PartUsage` as a KerML `Feature` (an in-context occurrence) is consistent with the framing used here, where `oslc_plm:PartUsage` is the contribution unit and PartUsage versions are the post-filter survivors named in `EffectivitySelections.selects`. A reviewer familiar with SysML v2 will find the term reasonably orienting; the underlying constructs are different in expressiveness, but not in spirit.
+3. **Reviewers should not expect a mapping.** This document does not claim, and the TC should not assume, that the OSLC PLM model can round-trip with SysML v2. They are deliberately different designs serving different problem framings, and the asymmetry — particularly in the variability and effectivity dimensions — is intrinsic, not an accident of vocabulary choice.
+
+### Cross-domain linking via OSLC AM is already provided
+
+Although the *data models* are not aligned, the OSLC PLM specification already establishes a usable cross-domain *link* surface between PLM resources (Parts, PartUsages) and architecture-modelling resources (including SysML v2 model elements surfaced as `oslc_am:Resource`s). The mechanism splits into two complementary directions:
+
+- **PLM → anywhere (existing).** `oslc_plm:Part`, `oslc_plm:PartUsage`, `oslc_plm:LogicalDesign`, and `oslc_plm:PhysicalDesign` carry the OSLC AM common link types `derives`, `elaborates`, `external`, `refine`, `satisfy`, and `trace` (in the legacy `jazz_am:` namespace) as shape properties. A PLM resource can therefore point at any AM resource (or any other resource) via these link types — establishing relationships such as *Part satisfies Requirement*, *Part traces to Architecture Element*, *Part derives from Specification*, and so on.
+- **AM → PLM (new in this revision).** A new common link type `oslc_am:realizes` is contributed to the OASIS-standard `oslc_am:` namespace by the OSLC PLM specification, defined as a property on `oslc_am:Resource`. The canonical use is a SysML `PartDefinition` (exposed as an `oslc_am:Resource` via the OASIS OSLC SysML v2 vocabulary) realizing an `oslc_plm:Part` — i.e., the architecture-model element representing or fulfilling the PLM master record. The property is defined on `oslc_am:Resource` only; PLM resources are *targets* of `realizes` assertions, not bearers. The constraint is recorded in the PLM Shape spec under *Constraints on Other OSLC Domain Resources → `oslc_am:Resource`*.
+
+These link types do not align the SysML v2 and PLM data models — and aren't intended to. They give integrators a vocabulary for asserting *cross-model* relationships ("this SysML PartDefinition realizes this PLM Part," "this PLM Part satisfies this requirement") without requiring either side to know the structure of the other. This is exactly the integration role OSLC has historically played: not a translation layer between toolchains, but a stable surface for assertions across them.
+
+### Authoritative sources
+
+- OMG SysML v2 Final Adoption announcement (July 2025) — https://www.omg.org/news/releases/pr2025/07-21-25.htm
+- OMG SysML v2 Beta 2 landing — https://www.omg.org/spec/SysML/2.0/Beta2/About-SysML
+- OMG SysML v2 Part 1 (Language), Beta 1 PDF — https://www.omg.org/spec/SysML/2.0/Beta1/Language/PDF
+- OMG KerML 1.0 PDF — https://www.omg.org/spec/KerML/1.0/PDF
+- OMG Systems Modeling API and Services 1.0 — https://www.omg.org/spec/SystemsModelingAPI/1.0/Beta1/PDF
+- Systems-Modeling/SysML-v2-Release (Systems Library `SysML.sysml`) — https://github.com/Systems-Modeling/SysML-v2-Release
+- OASIS OSLC SysML v2 vocabulary — https://docs.oasis-open-projects.org/oslc-op/sysml/v2.0/sysml-vocab.html
+- PTC, *A guide to SysML v2* (notes OSLC + Windchill) — https://www.ptc.com/en/blogs/alm/guide-to-sysml-v2
+- Siemens Teamcenter SysML v2 guide — https://blogs.sw.siemens.com/teamcenter/sysml-v2-guide/
+- Friedenthal, *SysML v2 Basics*, INCOSE IW 2024 — https://www.omgwiki.org/MBSE/lib/exe/fetch.php?media=mbse%3Asysml_v2_transition%3Asysml_v2_basics-incose_iw-sfriedenthal-2024-01-28.pdf
+- *An Analysis of the Semantic Foundation of KerML and SysML v2* (NEMO/UFES, 2024) — https://nemo.inf.ufes.br/wp-content/papercite-data/pdf/an_analysis_of_the_semantic_foundation_of_kerml_and_sysml_v2_2024.pdf
+
+**Caveats.** SysML v2 went through Beta in 2023, Beta 2 in 2024, Final Adopted in July 2025, with an editorial update in March 2026 for ISO. Specific clause numbers cited from secondary citations may shift by a clause in the Final Adopted text; the metaclass names (`PartDefinition`, `PartUsage`) and the KerML lineage (Classifier, Feature) are stable across these revisions.

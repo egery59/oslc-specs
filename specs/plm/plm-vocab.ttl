@@ -1,0 +1,365 @@
+# Copyright 2024 OASIS Open
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+@prefix dcterms:     <http://purl.org/dc/terms/> .
+@prefix oslc_am:     <http://open-services.net/ns/am#> .
+@prefix oslc_config: <http://open-services.net/ns/config#> .
+@prefix owl:         <http://www.w3.org/2002/07/owl#> .
+@prefix rdf:         <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:        <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix vann:        <http://purl.org/vocab/vann/> .
+@prefix xsd:         <http://www.w3.org/2001/XMLSchema#> .
+
+@prefix oslc_plm:    <http://open-services.net/ns/plm#> .
+
+oslc_plm: a owl:Ontology ;
+    rdfs:label "OSLC PLM Vocabulary" ;
+    dcterms:dateCopyrighted "2012-2024" ;
+    dcterms:description "All vocabulary URIs defined in the OSLC Product Lifecycle Management (PLM) namespace."^^rdf:XMLLiteral ;
+    dcterms:hasVersion "WD" ;
+    dcterms:isPartOf <https://docs.oasis-open-projects.org/oslc-op/plm/v1.0/os/plm-spec.html> ;
+    dcterms:issued "2024-08-01"^^xsd:date ;
+    dcterms:license <http://www.apache.org/licenses/LICENSE-2.0> ;
+    dcterms:publisher <https://open-services.net/about/> ;
+    dcterms:source <https://docs.oasis-open-projects.org/oslc-op/plm/v1.0/os/plm-vocab.ttl> ;
+    dcterms:title "OSLC PLM Vocabulary" ;
+    vann:preferredNamespacePrefix "oslc_plm" .
+
+# Classes defined in the OSLC PLM specification
+
+oslc_plm:Part a rdfs:Class ;
+    rdfs:subClassOf oslc_am:Resource ;
+    rdfs:label "Part" ;
+    rdfs:comment "An artifact managed by a PLM product, an element of a BOM." ;
+    rdfs:isDefinedBy oslc_plm: ;
+    rdfs:subClassOf oslc_am:Resource .
+
+oslc_plm:PartUsage a rdfs:Class ;
+    rdfs:subClassOf oslc_am:Resource ;
+    rdfs:label "PartUsage" ;
+    rdfs:comment "The use of a part in another part." ;
+    rdfs:isDefinedBy oslc_plm: ;
+    rdfs:subClassOf oslc_am:Resource .
+
+oslc_plm:LogicalDesign a rdfs:Class ;
+    rdfs:subClassOf oslc_plm:Part ;
+    rdfs:label "Logical Design" ;
+    rdfs:comment "The logical design of a product" ;
+    rdfs:isDefinedBy oslc_plm: ;
+    rdfs:subClassOf oslc_am:Resource .
+
+oslc_plm:PhysicalDesign a rdfs:Class ;
+    rdfs:subClassOf oslc_plm:Part ;
+    rdfs:label "Physical Design" ;
+    rdfs:comment "The physical design of a product" ;
+    rdfs:isDefinedBy oslc_plm: ;
+    rdfs:subClassOf oslc_am:Resource .
+
+oslc_plm:Dimension a rdfs:Class ;
+    rdfs:label "Dimension" ;
+    rdfs:comment "Specifies units for property types" ;
+    rdfs:isDefinedBy oslc_plm: ;
+    rdfs:subClassOf oslc_am:Resource .
+
+# Properties defined in the OSLC PLM specification
+
+oslc_plm:alignsPart
+  a rdf:Property ;
+  rdfs:isDefinedBy oslc_plm: ;
+  rdfs:label "alignsPart" ;
+  rdfs:comment "A Part is aligned with another Part. It is likely that the target resource will be oslc_plm:Part." .
+
+oslc_plm:alignsPartUsage
+  a rdf:Property ;
+  rdfs:isDefinedBy oslc_plm: ;
+  rdfs:label "alignsPartUsage" ;
+  rdfs:comment "A PartUsage is aligned with another PartUsage. It is likely that the target resource will be oslc_plm:PartUsage." .
+
+oslc_plm:composedOfPartUsage
+  a rdf:Property ;
+  rdfs:isDefinedBy oslc_plm: ;
+  rdfs:label "composedOfPartUsage" ;
+  rdfs:comment "A Part is composed of PartUsages. It is likely that the target resource will be oslc_plm:PartUsage." .
+
+oslc_plm:representsPart
+  a rdf:Property ;
+  rdfs:isDefinedBy oslc_plm: ;
+  rdfs:label "representsPart" ;
+  rdfs:comment "A PartUsage represents a Part. It is likely that the target resource will be oslc_plm:Part." .
+
+oslc_plm:realizesLogicalDesign
+  a rdf:Property ;
+  rdfs:isDefinedBy oslc_plm: ;
+  rdfs:label "realizesLogicalDesign" ;
+  rdfs:comment "A PhysicalDesign realizes a LogicalDesign. It is likely that the target resource will be oslc_plm:logicalDesign." .
+
+oslc_plm:boundingBox
+  a rdf:Property ;
+  rdfs:isDefinedBy oslc_plm: ;
+  rdfs:label "boundingBox" ;
+  rdfs:comment "An oslc_plm:boundingBox represents the rough dimension of an oslc_plm:Part. It is likely that the target resource will be a oslc_plm:Dimension.".
+
+oslc_plm:weight
+  a rdf:Property ;
+  rdfs:isDefinedBy oslc_plm: ;
+  rdfs:label "weight" ;
+  rdfs:comment "An oslc_plm:weight represents the weight of an oslc_plm:Part.".
+
+
+
+# The following properties are intended to be supported by other OSLC domains: CM, QM and AM
+# They are defined in the PLM specification, and are included as additional constraints
+# in the intended domains
+
+# Additional properties for the CM domain
+
+oslc_plm:affectsPart
+  a rdf:Property ;
+  rdfs:isDefinedBy oslc_plm: ;
+  rdfs:label "affectsPart" ;
+  rdfs:comment "A ChangeRequest affects a Part. It is likely that the target resource will be oslc_plm:Part." .
+
+oslc_plm:hasProblemPart
+  a rdf:Property ;
+  rdfs:isDefinedBy oslc_plm: ;
+  rdfs:label "hasProblemPart" ;
+  rdfs:comment "A ChangeRequest has a problem Part. It is likely that the target resource will be oslc_plm:Part." .
+
+oslc_plm:hasSolutionPart
+  a rdf:Property ;
+  rdfs:isDefinedBy oslc_plm: ;
+  rdfs:label "hasSolutionPart" ;
+  rdfs:comment "A ChangeRequest has a solution Part. It is likely that the target resource will be oslc_plm:Part." .
+
+oslc_plm:relatedPart
+  a rdf:Property ;
+  rdfs:isDefinedBy oslc_plm: ;
+  rdfs:label "relatedPart" ;
+  rdfs:comment "A ChangeRequest has a related Part. It is likely that the target resource will be oslc_plm:Part." .
+
+oslc_plm:implementsPart
+  a rdf:Property ;
+  rdfs:isDefinedBy oslc_plm: ;
+  rdfs:label "implementsPart" ;
+  rdfs:comment "A ChangeRequest implements a Part. It is likely that the target resource will be oslc_plm:Part." .
+
+
+oslc_plm:affectsPartUsage
+  a rdf:Property ;
+  rdfs:isDefinedBy oslc_plm: ;
+  rdfs:label "affectsPartUsage" ;
+  rdfs:comment "A ChangeRequest affects a PartUsage. It is likely that the target resource will be oslc_plm:PartUsage." .
+
+oslc_plm:hasProblemPartUsage
+  a rdf:Property ;
+  rdfs:isDefinedBy oslc_plm: ;
+  rdfs:label "hasProblemPartUsage" ;
+  rdfs:comment "A ChangeRequest has a problem PartUsage. It is likely that the target resource will be oslc_plm:PartUsage." .
+
+oslc_plm:hasSolutionPartUsage
+  a rdf:Property ;
+  rdfs:isDefinedBy oslc_plm: ;
+  rdfs:label "hasSolutionPartUsage" ;
+  rdfs:comment "A ChangeRequest has a solution PartUsage. It is likely that the target resource will be oslc_plm:PartUsage." .
+
+oslc_plm:relatedPartUsage
+  a rdf:Property ;
+  rdfs:isDefinedBy oslc_plm: ;
+  rdfs:label "relatedPartUsage" ;
+  rdfs:comment "A ChangeRequest has a related PartUsage. It is likely that the target resource will be oslc_plm:PartUsage." .
+
+oslc_plm:implementsPartUsage
+  a rdf:Property ;
+  rdfs:isDefinedBy oslc_plm: ;
+  rdfs:label "implementsPartUsage" ;
+  rdfs:comment "A ChangeRequest implements a PartUsage. It is likely that the target resource will be oslc_plm:PartUsage." .
+
+
+# Additional properties for the QM domain
+
+oslc_plm:validatesPart
+  a rdf:Property ;
+  rdfs:isDefinedBy oslc_plm: ;
+  rdfs:label "validatesPart" ;
+  rdfs:comment "A TestCase validates or verifies a Part. It is likely that the target resource will be oslc_plm:Part." .
+
+oslc_plm:validatesPartUsage
+  a rdf:Property ;
+  rdfs:isDefinedBy oslc_plm: ;
+  rdfs:label "validatesPartUsage" ;
+  rdfs:comment "A TestCase validates or verifies a PartUsage. It is likely that the target resource will be oslc_plm:PartUsage." .
+
+
+# Additional properties for the QM domain
+
+
+# ── Effectivity ──────────────────────────────────────────────────────
+#
+# Effectivity resources express the instance/timing parameters (date,
+# unit, serial, lot, model) under which a Part or PartUsage version
+# applies. Carried by the version resource and evaluated by the server
+# when computing oslc_plm:EffectivitySelections.selects against the
+# EffectivityContext identified by the containing configuration's
+# oslc_plm:effectivityContext property. This is a PLM-domain extension
+# of oslc_config:Selections; no changes to OSLC Configuration
+# Management are required.
+
+oslc_plm:EffectivitySelections a rdfs:Class ;
+    rdfs:subClassOf oslc_config:Selections ;
+    rdfs:label "Effectivity Selections" ;
+    rdfs:comment "A specialization of oslc_config:Selections whose oslc_config:selects triples name the Part and PartUsage version resources that have survived both the Configuration-Context candidate selection (per the OSLC CM base spec, Section 12) and the evaluation of their oslc_plm:effectivity records against the EffectivityContext identified by the containing configuration's oslc_plm:effectivityContext property. Baselines hold frozen selects; streams' selects are server-maintained." ;
+    rdfs:isDefinedBy oslc_plm: .
+
+oslc_plm:effectivityContext
+  a rdf:Property ;
+  rdfs:isDefinedBy oslc_plm: ;
+  rdfs:label "effectivityContext" ;
+  rdfs:comment "The EffectivityContext whose parameters were supplied to effectivity predicate evaluation when computing the oslc_plm:EffectivitySelections.selects triples of this configuration. Carried by an oslc_config:Configuration as a PLM-domain extension property. MUST be present on any configuration whose selections include one or more oslc_plm:EffectivitySelections. On a baseline the property is read-only and frozen; on a stream the property is mutable and modification causes re-computation of the affected EffectivitySelections.selects." .
+
+oslc_plm:Effectivity a rdfs:Class ;
+    rdfs:subClassOf oslc_am:Resource ;
+    rdfs:label "Effectivity" ;
+    rdfs:comment "An effectivity record carried by a Part or PartUsage version, expressing the instance/timing parameters (date range, unit range, serial range, lot, end-item) under which the version applies. Evaluated against an EffectivityContext attached to the containing oslc_config:Configuration via oslc_plm:effectivityContext when the server computes oslc_plm:EffectivitySelections.selects." ;
+    rdfs:isDefinedBy oslc_plm: .
+
+oslc_plm:effectivity
+  a rdf:Property ;
+  rdfs:isDefinedBy oslc_plm: ;
+  rdfs:label "effectivity" ;
+  rdfs:comment "An Effectivity record carried by a Part or PartUsage version. Multiple effectivity records on a single version are interpreted as a logical OR (the version is effective under the context if any of its records' predicates evaluate to true)." .
+
+oslc_plm:effectiveValueType
+  a rdf:Property ;
+  rdfs:isDefinedBy oslc_plm: ;
+  rdfs:label "effectiveValueType" ;
+  rdfs:comment "The type of value(s) the Effectivity record's range is expressed in. One of oslc_plm:Date, oslc_plm:UnitNumber, oslc_plm:SerialNumber, oslc_plm:Lot, or oslc_plm:Model." .
+
+oslc_plm:effectiveForEndItem
+  a rdf:Property ;
+  rdfs:isDefinedBy oslc_plm: ;
+  rdfs:label "effectiveForEndItem" ;
+  rdfs:comment "The end-item Part within whose serial/unit namespace this Effectivity record's range values are interpreted. REQUIRED for Effectivity records with effectiveValueType of UnitNumber or SerialNumber, since unit and serial numbers are otherwise ambiguous across end-items. OPTIONAL for Date, Lot, and Model effectivity." .
+
+oslc_plm:effectiveFrom
+  a rdf:Property ;
+  rdfs:isDefinedBy oslc_plm: ;
+  rdfs:label "effectiveFrom" ;
+  rdfs:comment "The lower bound (inclusive) of the Effectivity record's range. The literal datatype matches effectiveValueType (xsd:date for Date, xsd:integer for UnitNumber, xsd:string for SerialNumber/Lot/Model). Absence means open-ended-below." .
+
+oslc_plm:effectiveTo
+  a rdf:Property ;
+  rdfs:isDefinedBy oslc_plm: ;
+  rdfs:label "effectiveTo" ;
+  rdfs:comment "The upper bound (inclusive) of the Effectivity record's range. Datatype matches effectiveValueType. Absence means open-ended-above." .
+
+oslc_plm:effectiveReplacement
+  a rdf:Property ;
+  rdfs:isDefinedBy oslc_plm: ;
+  rdfs:label "effectiveReplacement" ;
+  rdfs:comment "Optional. When present, the Effectivity record's predicate evaluates as a substitution: if the supplied context falls within [effectiveFrom, effectiveTo], the candidate version (the one carrying this record) is replaced in the resolved binding by the version named here. This expresses release effectivity / supersede semantics, where a newer revision replaces an older one as of a date or unit number. The target MUST be a different version of the same versioned resource as the candidate." .
+
+oslc_plm:authorizedBy
+  a rdf:Property ;
+  rdfs:isDefinedBy oslc_plm: ;
+  rdfs:label "authorizedBy" ;
+  rdfs:comment "Optional. The change-management resource (typically an oslc_cm:ChangeRequest) that authorized this Effectivity record. Provides the audit linkage required by many enterprise PLM workflows." .
+
+# Effectivity value-type enumeration: identifies the kind of range an
+# oslc_plm:Effectivity record carries. Modelled as an OSLC enumeration per
+# https://docs.oasis-open-projects.org/oslc-op/core/v3.0/os/core-vocab.html#enumerations —
+# EffectivityValueType is the enumeration class, and Date / UnitNumber /
+# SerialNumber / Lot / Model are its enumeration instances. Shapes that
+# constrain effectiveValueType use oslc:range oslc_plm:EffectivityValueType
+# and oslc:allowedValue to enumerate the permitted members.
+
+oslc_plm:EffectivityValueType a rdfs:Class ;
+    rdfs:label "Effectivity Value Type" ;
+    rdfs:comment "The kind of range an oslc_plm:Effectivity record carries. The enumeration is open in the vocabulary; shapes use oslc:allowedValue to close it for specific usages." ;
+    rdfs:isDefinedBy oslc_plm: .
+
+oslc_plm:Date a oslc_plm:EffectivityValueType ;
+    rdfs:label "Date" ;
+    rdfs:comment "Effectivity value-type enumeration member: range values are xsd:date." ;
+    rdfs:isDefinedBy oslc_plm: .
+
+oslc_plm:UnitNumber a oslc_plm:EffectivityValueType ;
+    rdfs:label "Unit Number" ;
+    rdfs:comment "Effectivity value-type enumeration member: range values are xsd:integer unit numbers, interpreted within the namespace of effectiveForEndItem." ;
+    rdfs:isDefinedBy oslc_plm: .
+
+oslc_plm:SerialNumber a oslc_plm:EffectivityValueType ;
+    rdfs:label "Serial Number" ;
+    rdfs:comment "Effectivity value-type enumeration member: range values are xsd:string serial numbers, interpreted within the namespace of effectiveForEndItem." ;
+    rdfs:isDefinedBy oslc_plm: .
+
+oslc_plm:Lot a oslc_plm:EffectivityValueType ;
+    rdfs:label "Lot" ;
+    rdfs:comment "Effectivity value-type enumeration member: range values are xsd:string lot identifiers." ;
+    rdfs:isDefinedBy oslc_plm: .
+
+oslc_plm:Model a oslc_plm:EffectivityValueType ;
+    rdfs:label "Model" ;
+    rdfs:comment "Effectivity value-type enumeration member: range values are xsd:string model identifiers." ;
+    rdfs:isDefinedBy oslc_plm: .
+
+# Effectivity context resource and parameter properties.
+
+oslc_plm:EffectivityContext a rdfs:Class ;
+    rdfs:subClassOf oslc_am:Resource ;
+    rdfs:label "Effectivity Context" ;
+    rdfs:comment "A resource carrying the parameter values supplied to effectivity predicate evaluation. Referenced from a request via ?oslc_config.effectivity=<uri> per the OSLC Configuration Management Selections Extensions." ;
+    rdfs:isDefinedBy oslc_plm: .
+
+oslc_plm:effectivityDate
+  a rdf:Property ;
+  rdfs:isDefinedBy oslc_plm: ;
+  rdfs:label "effectivityDate" ;
+  rdfs:comment "An xsd:date value for date-based effectivity predicate evaluation." .
+
+oslc_plm:effectivityEndItem
+  a rdf:Property ;
+  rdfs:isDefinedBy oslc_plm: ;
+  rdfs:label "effectivityEndItem" ;
+  rdfs:comment "The end-item Part defining the serial/unit namespace for the unit/serial values in this context. REQUIRED when effectivityUnitNumber or effectivitySerialNumber is supplied." .
+
+oslc_plm:effectivityUnitNumber
+  a rdf:Property ;
+  rdfs:isDefinedBy oslc_plm: ;
+  rdfs:label "effectivityUnitNumber" ;
+  rdfs:comment "An xsd:integer unit number, interpreted within the namespace of effectivityEndItem." .
+
+oslc_plm:effectivitySerialNumber
+  a rdf:Property ;
+  rdfs:isDefinedBy oslc_plm: ;
+  rdfs:label "effectivitySerialNumber" ;
+  rdfs:comment "An xsd:string serial number, interpreted within the namespace of effectivityEndItem." .
+
+oslc_plm:effectivityLot
+  a rdf:Property ;
+  rdfs:isDefinedBy oslc_plm: ;
+  rdfs:label "effectivityLot" ;
+  rdfs:comment "An xsd:string lot identifier." .
+
+oslc_plm:effectivityModel
+  a rdf:Property ;
+  rdfs:isDefinedBy oslc_plm: ;
+  rdfs:label "effectivityModel" ;
+  rdfs:comment "An xsd:string model identifier." .
+
+# Variability is not a PLM-domain concept; it applies to any OSLC
+# resource. See the OSLC Variability specification at
+# specs/core/oslc-variability-spec.html for VariabilitySelections,
+# OptionSet, Option, OptionValue, VariabilityCondition,
+# VariabilityContext, and the oslc:variabilityContext property on
+# oslc_config:Configuration.
